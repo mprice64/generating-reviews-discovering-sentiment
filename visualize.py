@@ -77,7 +77,7 @@ def features():
         colors = map( lambda n: rgb(min,max,float(n)), activations)
 
         colors_wrapped = map( lambda c: "rgb({},{},{})".format(*c), colors)
-        paired_text = list(zip( text, colors_wrapped ))
+        paired_text = list(zip( encoder.preprocess_text(text), colors_wrapped ))
 
         splits = np.array_split( np.array(paired_text), np.ceil(len(paired_text)/150))
         for split in splits:
