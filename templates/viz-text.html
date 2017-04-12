@@ -5,14 +5,14 @@
     <form action="/features">
         Input text: <textarea rows="8" cols="120" name="text" id="text">{{text}}</textarea>
         <br>
-        Layers (comma delimited): <input type="text" name="layers" id="layers" value="{{ layers }}">
+        Neurons (comma delimited): <input type="text" name="neurons" id="neurons" value="{{ neurons }}">
         <br>
         <button type="submit">GO</button>
     </form>
 
-    {% if sentiments %}
+    {% if activations %}
         <table class="fixed">
-            {% for row in sentiments %}
+            {% for row in activations %}
             <tr>
                 {% for tuple in row %}
                     <td width="10px" style="background-color:{{tuple[1]}}">{{tuple[0]}}</td>
