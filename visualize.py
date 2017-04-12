@@ -6,7 +6,8 @@ import encoder
 import numpy as np
 from flask import Flask, render_template, request
 
-notes = """
+# TODO -- Move this somewhere else.. like a jupyter notebook.
+NOTES = """
 2388 -- Sentiment neuron
 1742 2045 2094 -- Position in review?
 2903 -- Sentiment also ?
@@ -14,7 +15,13 @@ notes = """
 """
 
 mdl = encoder.Model()
+
 SENTIMENT_NEURON = 2388
+
+EXAMPLE_REVIEW = """Team Spirit is maybe made by the best intentions, but it misses the warmth
+of "All Stars" (1997) by Jean van de Velde. Most scenes are identic, just
+not that funny and not that well done. The actors repeat the same lines as
+in "All Stars" but without much feeling."""
 
 # Adapted from https://stackoverflow.com/questions/20792445/calculate-rgb-value-for-a-range-of-values-to-create-heat-map
 def rgb(minimum, maximum, value):
@@ -29,22 +36,23 @@ app = Flask(__name__)
 @app.route("/")
 def home():
     return render_template('viz-text.html',
-                           layers=str(SENTIMENT_NEURON)
+                           layers=str(SENTIMENT_NEURON),
+                           text=EXAMPLE_REVIEW
                            )
 
 @app.route("/features")
 def features():
-    text = request.args.get("text","")
+
+    text = request.args.get("text",EXAMPLE_REVIEW)
     layers = request.args.get("layers",str(SENTIMENT_NEURON))
 
-    # TODO -- Is there a more optimal way to get the activations at each letter?  Seems like it should be fetchable
-    # from the iterative processing somehow.
-    # Perhaps that is what https://github.com/racoder/generating-reviews-discovering-sentiment/commit/86beb6bbe1181b1fc102c4afc69daa34c82df171 is ?
 
-    # This generates each substring "F", "Fo", "Foo", etc.
-    texts = [ text[0:i] for i in range(1,len(text)+1) ]
-
-    text_features = mdl.transform(texts)
+    if False: # TODO -- Make configurable?  This is the old method, probably will just remove.
+        # This generates each substring "F", "Fo", "Foo", etc.
+        texts = [ text[0:i] for i in range(1,len(text)+1) ]
+        text_features = mdl.transform(texts)
+    else:
+        text_features = mdl.transform([text], True)
 
     all_paired_text = []
 
@@ -53,7 +61,7 @@ def features():
     else:
         layers_array = list(range(0,len(text_features[0])))
 
-    text_features = text_features[:, layers_array] # = text_features[:, SENTIMENT_NEURON]
+    text_features = text_features[:, layers_array]
 
     # exampleColors = np.linspace(-1,1,len(text_features[0]))
     # text_features = np.vstack([exampleColors, text_features])

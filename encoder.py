@@ -1,11 +1,11 @@
 import time
 import numpy as np
 import tensorflow as tf
-
+import itertools
 from tqdm import tqdm
 from sklearn.externals import joblib
 
-from utils import HParams, preprocess, iter_data
+from utils import HParams, preprocess, iter_data, preprocess_text
 
 global nloaded
 nloaded = 0
@@ -110,7 +110,7 @@ def batch_pad(xs, nbatch, nsteps):
     for i, x in enumerate(xs):
         l = len(x)
         npad = nsteps-l
-        xmb[i, -l:] = [ord(c) for c in list(x)]
+        xmb[i, -l:] = list(x)
         mmb[i, :npad] = 0
     return xmb, mmb
 
@@ -151,7 +151,7 @@ class Model(object):
         def seq_cells(xmb, mmb, smb):
             return sess.run(cells, {X: xmb, M: mmb, S: smb})
 
-        def transform(xs, track_sentiment=False):
+        def transform(xs, track_neurons=False):
             tstart = time.time()
             xs = [preprocess(x) for x in xs]
             lens = np.asarray([len(x) for x in xs])
@@ -162,7 +162,9 @@ class Model(object):
             offset = 0
             n = len(xs)
             smb = np.zeros((2, n, hps.nhidden), dtype=np.float32)
-            sentiment_neuron_values = []
+
+            neuron_values = []
+
             for step in range(0, ceil_round_step(maxlen, nsteps), nsteps):
                 start = step
                 end = step+nsteps
@@ -173,25 +175,30 @@ class Model(object):
                 sorted_xs = sorted_xs[ndone:]
                 nsubseq = len(xsubseq)
                 xmb, mmb = batch_pad(xsubseq, nsubseq, nsteps)
-                print "iterating through each batch for step", step
                 for batch in range(0, nsubseq, nbatch):
-                    start = batch
-                    end = batch+nbatch
+                    batch_start = batch
+                    batch_end = batch+nbatch
+
+                    # Adapted from : https://github.com/racoder/generating-reviews-discovering-sentiment/commit/86beb6bbe1181b1fc102c4afc69daa34c82df171
+                    if track_neurons:
+                        batch_cells = seq_cells(xmb[batch_start:batch_end], mmb[batch_start:batch_end],
+                                                smb[:, offset+batch_start:offset+batch_end, :]
+                                                )
+                        # If less than the full batch size is used, the full array is returned
+                        # with the output seemingly at the end of the array and padded static values in the beginning.
+                        neuron_values.append( batch_cells[ -len(xsubseq[0]):,0,:] )
+
                     batch_smb = seq_rep(
-                        xmb[start:end], mmb[start:end],
-                        smb[:, offset+start:offset+end, :])
-                    smb[:, offset+start:offset+end, :] = batch_smb
-                    batch_cells = seq_cells(
-                        xmb[start:end], mmb[start:end],
-                        smb[:, offset+start:offset+end, :])
-                    if track_sentiment:
-                        print "tracking sentiment..", batch_smb.shape, batch_cells.shape
-                        sentiment_neuron_values.append(batch_cells[:,0,2388])
-                print "done with batch iteration"
-            features = smb[0, unsort_idxs, :]
-            print('%0.3f seconds to transform %d examples' %
-                  (time.time() - tstart, n))
-            return features, sentiment_neuron_values
+                        xmb[batch_start:batch_end], mmb[batch_start:batch_end],
+                        smb[:, offset+batch_start:offset+batch_end, :]
+                    )
+                    smb[:, offset+batch_start:offset+batch_end, :] = batch_smb
+
+            if track_neurons:
+                return np.array(list(itertools.chain(*neuron_values)))
+            else:
+                features = smb[0, unsort_idxs, :]
+                return features
 
         def cell_transform(xs, indexes=None):
             Fs = []
@@ -216,5 +223,30 @@ class Model(object):
 
 if __name__ == '__main__':
     mdl = Model()
-    text = ['demo!']
-    text_features = mdl.transform(text)
+
+    SENTIMENT_NEURON = 2388
+
+    # A roller coaster of sentiment.
+    main_text = 'I really like it, in fact I love it, but it is a bad value so I returned it because it was so expensive.  Just kidding I loved it!  It is awesome and worth every penny!'
+
+    # ----
+
+    print("One shot neuron extraction.")
+    neuron_activations = mdl.transform([main_text], True)
+    sentiment_activations = neuron_activations.T[SENTIMENT_NEURON]
+
+    for letter, sValue in zip(preprocess_text(main_text), sentiment_activations):
+        print( letter + " : " + str(sValue) )
+
+    # ----
+
+    # This method is slightly flawed because of the input formatting munging the start/end and end of the text a little bit.
+    # But it demonstrates that the neuron activation from above extractor seems to work.
+    print("Shot per-string-prefix final output extraction.")
+    texts = [ main_text[0:i] for i in range(1,len(main_text)+1) ]
+
+    text_features = mdl.transform( texts )
+
+    for text, activations in zip(texts, text_features):
+        neuron_activations = activations[SENTIMENT_NEURON]
+        print(str(neuron_activations) + " : " + text)
