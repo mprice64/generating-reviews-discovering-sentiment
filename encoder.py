@@ -110,7 +110,7 @@ def batch_pad(xs, nbatch, nsteps):
     for i, x in enumerate(xs):
         l = len(x)
         npad = nsteps-l
-        xmb[i, -l:] = list(x)
+        xmb[i, -l:] = [ord(c) for c in list(x)]
         mmb[i, :npad] = 0
     return xmb, mmb
 
@@ -151,7 +151,7 @@ class Model(object):
         def seq_cells(xmb, mmb, smb):
             return sess.run(cells, {X: xmb, M: mmb, S: smb})
 
-        def transform(xs):
+        def transform(xs, track_sentiment=False):
             tstart = time.time()
             xs = [preprocess(x) for x in xs]
             lens = np.asarray([len(x) for x in xs])
@@ -162,6 +162,7 @@ class Model(object):
             offset = 0
             n = len(xs)
             smb = np.zeros((2, n, hps.nhidden), dtype=np.float32)
+            sentiment_neuron_values = []
             for step in range(0, ceil_round_step(maxlen, nsteps), nsteps):
                 start = step
                 end = step+nsteps
@@ -172,6 +173,7 @@ class Model(object):
                 sorted_xs = sorted_xs[ndone:]
                 nsubseq = len(xsubseq)
                 xmb, mmb = batch_pad(xsubseq, nsubseq, nsteps)
+                print "iterating through each batch for step", step
                 for batch in range(0, nsubseq, nbatch):
                     start = batch
                     end = batch+nbatch
@@ -179,10 +181,17 @@ class Model(object):
                         xmb[start:end], mmb[start:end],
                         smb[:, offset+start:offset+end, :])
                     smb[:, offset+start:offset+end, :] = batch_smb
+                    batch_cells = seq_cells(
+                        xmb[start:end], mmb[start:end],
+                        smb[:, offset+start:offset+end, :])
+                    if track_sentiment:
+                        print "tracking sentiment..", batch_smb.shape, batch_cells.shape
+                        sentiment_neuron_values.append(batch_cells[:,0,2388])
+                print "done with batch iteration"
             features = smb[0, unsort_idxs, :]
             print('%0.3f seconds to transform %d examples' %
                   (time.time() - tstart, n))
-            return features
+            return features, sentiment_neuron_values
 
         def cell_transform(xs, indexes=None):
             Fs = []
@@ -209,4 +218,3 @@ if __name__ == '__main__':
     mdl = Model()
     text = ['demo!']
     text_features = mdl.transform(text)
-    print(text_features.shape)
