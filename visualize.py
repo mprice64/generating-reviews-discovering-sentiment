@@ -5,6 +5,7 @@
 import encoder
 import numpy as np
 from flask import Flask, render_template, request
+import re
 
 # TODO -- Move this somewhere else.. like a jupyter notebook.
 NOTES = """
@@ -64,7 +65,7 @@ def home():
 @app.route("/features")
 def features():
     text = request.args.get("text", EXAMPLE_REVIEW)
-    neurons = request.args.get("neurons", str(SENTIMENT_NEURON))
+    neuron_args = request.args.get("neurons", str(SENTIMENT_NEURON))
     max_row_width = int(request.args.get("max_row_width", "150"))
 
     # TODO -- Make method configurable?  This is the old method, probably will just remove.
@@ -78,17 +79,26 @@ def features():
 
     all_paired_text = []
 
-    if len(neurons):
-        layers_array = list(map(lambda l: int(l), neurons.split(",")))
-    else:
-        layers_array = list(range(0, len(text_features[0])))
+    if len(neuron_args):
+        neurons_array = []
 
-    text_features = text_features[:, layers_array]
+        for neuron_desc in neuron_args.split(","):
+            m = re.match("(\d+)-(\d+)", neuron_desc)
+            if m:
+                (start,end) = (int(m.group(1)), int(m.group(2)))
+                neurons_array.extend( list(range(start, end+1)) )
+            else:
+                neurons_array.append( int(neuron_desc) )
+    else:
+        # All neurons!
+        neurons_array = list(range(0, len(text_features[0])))
+
+    text_features = text_features[:, neurons_array]
 
     # exampleColors = np.linspace(-1,1,len(text_features[0]))
     # text_features = np.vstack([exampleColors, text_features])
 
-    for layerN, activations in zip(layers_array, text_features.T):
+    for layerN, activations in zip(neurons_array, text_features.T):
         # This is an issue, where the min/max of the color range is per-neuron and per-example.
         # This means when you feed in different inputs, the colors will have different meanings.
         # But if you use a global min/max across all neurons, many neurons get totally washed out.
@@ -110,7 +120,7 @@ def features():
             split = np.insert(split, 0, np.array(rowLabel), axis=0)
             all_paired_text.append(split)
 
-    return render_template('viz-text.html', text=text, neurons=neurons, activations=all_paired_text)
+    return render_template('viz-text.html', text=text, neurons=neuron_args, activations=all_paired_text)
 
 
 if __name__ == "__main__":
